@@ -1,0 +1,3 @@
+@echo off
+echo Starting Metro bundler for physical device...
+npx react-native start --host 192.168.0.11

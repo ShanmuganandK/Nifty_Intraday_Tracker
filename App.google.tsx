@@ -10,12 +10,10 @@ import {
   RefreshControl,
   TouchableOpacity,
 } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import {YahooStockData, StockData} from './types';
 import StockDetailScreen from './StockDetailScreen';
 import MarketStatus from './MarketStatus';
 import {WatchlistManager} from './WatchlistManager';
-import {CONFIG} from './config';
 import TopMoversScreen from './TopMoversScreen';
 
 const NIFTY50_SYMBOLS = [
@@ -30,14 +28,10 @@ const NIFTY50_SYMBOLS = [
   'ULTRACEMCO.NS', 'WIPRO.NS'
 ];
 
-const CACHE_KEY = 'nifty50_data';
+const BATCH_SIZE = 10;
+const DELAY_BETWEEN_BATCHES = 500;
+const CACHE_DURATION = 2 * 60 * 1000;
 
-// Use configurable values
-const BATCH_SIZE = CONFIG.BATCH_SIZE;
-const DELAY_BETWEEN_BATCHES = CONFIG.DELAY_BETWEEN_BATCHES;
-const CACHE_DURATION = CONFIG.CACHE_DURATION;
-
-// In-memory fallback cache
 let memoryCache: {data: StockData[], timestamp: number} | null = null;
 
 const App = () => {
@@ -112,22 +106,6 @@ const App = () => {
     return allData;
   };
 
-  const loadCachedData = async (): Promise<{data: StockData[], timestamp: number} | null> => {
-    return memoryCache;
-  };
-
-  const saveCachedData = async (stockData: StockData[]) => {
-    const cacheData = {
-      data: stockData,
-      timestamp: Date.now()
-    };
-    memoryCache = cacheData;
-  };
-
-  const isCacheValid = (timestamp: number): boolean => {
-    return Date.now() - timestamp < CACHE_DURATION;
-  };
-
   const fetchAndCacheData = async (isRefresh = false) => {
     try {
       if (isRefresh) setRefreshing(true);
@@ -135,7 +113,6 @@ const App = () => {
       const results = await fetchDataInBatches();
       setData(results);
       setLastUpdated(new Date());
-      await saveCachedData(results);
       setError(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to fetch data');
@@ -153,20 +130,7 @@ const App = () => {
     const initializeData = async () => {
       await WatchlistManager.initialize();
       setWatchlist(WatchlistManager.getWatchlist());
-      
-      const cached = await loadCachedData();
-      
-      if (cached && isCacheValid(cached.timestamp)) {
-        setData(cached.data);
-        setLastUpdated(new Date(cached.timestamp));
-        setLoading(false);
-      } else {
-        if (cached) {
-          setData(cached.data);
-          setLastUpdated(new Date(cached.timestamp));
-        }
-        await fetchAndCacheData();
-      }
+      await fetchAndCacheData();
     };
 
     initializeData();
@@ -188,28 +152,35 @@ const App = () => {
     
     return (
       <TouchableOpacity 
-        style={styles.item}
+        style={styles.card}
         onPress={() => {
           setSelectedStock(item);
           setSelectedIndex(index);
         }}
       >
-        <View style={styles.leftContainer}>
-          <Text style={styles.symbol}>{item.symbol}</Text>
-          <TouchableOpacity 
-            onPress={() => toggleWatchlist(item.symbol)}
-            style={styles.heartButton}
-          >
-            <Text style={[styles.heart, {color: isInWatchlist ? '#FF6B6B' : '#666'}]}>
-              {isInWatchlist ? '♥' : '♡'}
-            </Text>
-          </TouchableOpacity>
-        </View>
-        <View style={styles.priceContainer}>
-          <Text style={styles.price}>₹{item.price.toFixed(2)}</Text>
-          <Text style={[styles.change, { color: item.isPositive ? '#4CAF50' : '#F44336' }]}>
-            {item.isPositive ? '+' : ''}{item.change.toFixed(2)} ({item.changePercent.toFixed(2)}%)
-          </Text>
+        <View style={styles.cardContent}>
+          <View style={styles.symbolContainer}>
+            <View style={styles.symbolRow}>
+              <Text style={styles.symbol}>{item.symbol}</Text>
+              <TouchableOpacity 
+                onPress={() => toggleWatchlist(item.symbol)}
+                style={styles.heartButton}
+              >
+                <Text style={[styles.heart, {color: isInWatchlist ? '#FF6B6B' : '#DDD'}]}>
+                  {isInWatchlist ? '♥' : '♡'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.companyName}>NSE</Text>
+          </View>
+          <View style={styles.priceContainer}>
+            <Text style={styles.price}>₹{item.price.toFixed(2)}</Text>
+            <View style={[styles.changeContainer, { backgroundColor: item.isPositive ? '#E8F5E8' : '#FFEBEE' }]}>
+              <Text style={[styles.change, { color: item.isPositive ? '#2E7D32' : '#C62828' }]}>
+                {item.isPositive ? '+' : ''}{item.change.toFixed(2)} ({item.changePercent.toFixed(2)}%)
+              </Text>
+            </View>
+          </View>
         </View>
       </TouchableOpacity>
     );
@@ -218,7 +189,8 @@ const App = () => {
   if (loading) {
     return (
       <View style={[styles.container, styles.center]}>
-        <ActivityIndicator size="large" color="#fff" />
+        <ActivityIndicator size="large" color="#1976D2" />
+        <Text style={{ color: '#5F6368', marginTop: 16 }}>Loading stock data...</Text>
       </View>
     );
   }
@@ -226,7 +198,8 @@ const App = () => {
   if (error) {
     return (
       <View style={[styles.container, styles.center]}>
-        <Text style={styles.error}>Error fetching data. Please try again later.</Text>
+        <Text style={styles.error}>Unable to fetch stock data</Text>
+        <Text style={{ color: '#5F6368', marginTop: 8, textAlign: 'center' }}>Please check your internet connection and try again</Text>
       </View>
     );
   }
@@ -257,7 +230,7 @@ const App = () => {
         onStockPress={(stock, index) => {
           setSelectedStock(stock);
           setSelectedIndex(index);
-          setShowTopMovers(false); // Close top movers when going to chart
+          setShowTopMovers(false);
         }}
         onBack={() => setShowTopMovers(false)}
       />
@@ -266,15 +239,16 @@ const App = () => {
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="light-content" />
+      <StatusBar barStyle="dark-content" backgroundColor="#fff" />
       <View style={styles.header}>
-        <Text style={styles.title}>Nifty 50 Stock Tracker</Text>
+        <Text style={styles.title}>Nifty 50</Text>
+        <Text style={styles.subtitle}>National Stock Exchange of India</Text>
         <View style={styles.headerButtons}>
           <TouchableOpacity 
             onPress={() => setShowWatchlistOnly(!showWatchlistOnly)}
-            style={[styles.filterButton, {backgroundColor: showWatchlistOnly ? '#FF6B6B' : '#333'}]}
+            style={[styles.filterButton, {backgroundColor: showWatchlistOnly ? '#1976D2' : '#E0E0E0'}]}
           >
-            <Text style={styles.filterText}>
+            <Text style={[styles.filterText, {color: showWatchlistOnly ? '#fff' : '#5F6368'}]}>
               {showWatchlistOnly ? '♥ Watchlist' : 'All Stocks'}
             </Text>
           </TouchableOpacity>
@@ -287,7 +261,7 @@ const App = () => {
         </View>
         {lastUpdated && (
           <Text style={styles.lastUpdated}>
-            Last updated: {lastUpdated.toLocaleTimeString()}
+            Updated {lastUpdated.toLocaleTimeString()}
           </Text>
         )}
       </View>
@@ -296,11 +270,14 @@ const App = () => {
         data={showWatchlistOnly ? data.filter(item => watchlist.includes(item.symbol)) : data}
         renderItem={renderItem}
         keyExtractor={(item, index) => index.toString()}
+        contentContainerStyle={styles.listContainer}
+        showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
             onRefresh={onRefresh}
-            tintColor="#fff"
+            tintColor="#1976D2"
+            colors={['#1976D2']}
           />
         }
         ListEmptyComponent={
@@ -319,7 +296,7 @@ const App = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#000',
+    backgroundColor: '#F8F9FA',
   },
   center: {
     justifyContent: 'center',
@@ -327,55 +304,107 @@ const styles = StyleSheet.create({
   },
   header: {
     padding: 20,
-    alignItems: 'center',
-    backgroundColor: '#1a1a1a',
+    backgroundColor: '#fff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E0E0E0',
   },
   title: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#fff',
+    fontSize: 28,
+    fontWeight: '600',
+    color: '#202124',
+    marginBottom: 4,
+  },
+  subtitle: {
+    fontSize: 14,
+    color: '#5F6368',
+    marginBottom: 8,
   },
   lastUpdated: {
     fontSize: 12,
-    color: '#ccc',
-    marginTop: 4,
+    color: '#5F6368',
   },
-  item: {
+  listContainer: {
+    padding: 16,
+  },
+  card: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    marginBottom: 12,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+  },
+  cardContent: {
+    padding: 16,
     flexDirection: 'row',
     justifyContent: 'space-between',
-    padding: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: '#333',
+    alignItems: 'center',
   },
-  leftContainer: {
+  symbolContainer: {
+    flex: 1,
+  },
+  symbol: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#202124',
+    marginBottom: 2,
+  },
+  companyName: {
+    fontSize: 12,
+    color: '#5F6368',
+  },
+  priceContainer: {
+    alignItems: 'flex-end',
+  },
+  price: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#202124',
+    marginBottom: 4,
+  },
+  changeContainer: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 16,
+  },
+  change: {
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  error: {
+    color: '#D93025',
+    fontSize: 16,
+    textAlign: 'center',
+  },
+  symbolRow: {
     flexDirection: 'row',
     alignItems: 'center',
   },
-  symbol: {
-    fontSize: 18,
-    color: '#fff',
-    marginRight: 10,
-  },
   heartButton: {
-    padding: 5,
+    marginLeft: 8,
+    padding: 4,
   },
   heart: {
-    fontSize: 20,
+    fontSize: 16,
   },
   headerButtons: {
     flexDirection: 'row',
-    marginTop: 10,
+    marginTop: 12,
+    marginBottom: 8,
   },
   filterButton: {
-    paddingHorizontal: 15,
-    paddingVertical: 8,
-    borderRadius: 20,
-    marginRight: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    marginRight: 8,
+    backgroundColor: '#E0E0E0',
   },
   filterText: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: '600',
+    fontSize: 12,
+    fontWeight: '500',
+    color: '#5F6368',
   },
   emptyWatchlist: {
     flex: 1,
@@ -384,28 +413,14 @@ const styles = StyleSheet.create({
     paddingTop: 100,
   },
   emptyText: {
-    color: '#fff',
+    color: '#202124',
     fontSize: 18,
     marginBottom: 10,
   },
   emptySubtext: {
-    color: '#666',
+    color: '#5F6368',
     fontSize: 14,
     textAlign: 'center',
-  },
-  priceContainer: {
-    alignItems: 'flex-end',
-  },
-  price: {
-    fontSize: 18,
-    color: '#fff',
-  },
-  change: {
-    fontSize: 16,
-  },
-  error: {
-    color: 'red',
-    fontSize: 18,
   },
 });
 

@@ -1,14 +1,7 @@
-import React, {useEffect, useState} from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  ActivityIndicator,
-  Dimensions,
-} from 'react-native';
-import {StockData, IntradayData} from './types';
-import LineChart from './LineChart';
+import React from 'react';
+import {View, Text, StyleSheet, TouchableOpacity, StatusBar, SafeAreaView, Dimensions} from 'react-native';
+import {StockData} from './types';
+import SimpleChart from './SimpleChart';
 
 interface Props {
   stock: StockData;
@@ -18,67 +11,63 @@ interface Props {
 }
 
 const StockDetailScreen: React.FC<Props> = ({stock, onBack, onSwipeLeft, onSwipeRight}) => {
-  const [chartData, setChartData] = useState<IntradayData[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  const fetchIntradayData = async () => {
-    try {
-      const response = await fetch(
-        `https://query1.finance.yahoo.com/v8/finance/chart/${stock.symbol}.NS?interval=15m&range=1d`
-      );
-      const result = await response.json();
-      
-      if (result.chart?.result?.[0]) {
-        const data = result.chart.result[0];
-        const timestamps = data.timestamp || [];
-        const prices = data.indicators?.quote?.[0]?.close || [];
-        const volumes = data.indicators?.quote?.[0]?.volume || [];
-        
-        const intradayData: IntradayData[] = timestamps.map((time: number, index: number) => ({
-          time: new Date(time * 1000),
-          price: prices[index] || 0,
-          volume: volumes[index] || 0,
-        })).filter(item => item.price > 0);
-        
-        setChartData(intradayData);
-      }
-    } catch (error) {
-      console.warn('Failed to fetch intraday data:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchIntradayData();
-  }, [stock.symbol]);
-
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={onBack} style={styles.backButton}>
-          <Text style={styles.backText}>←</Text>
-        </TouchableOpacity>
-        <View style={styles.stockInfo}>
+      <StatusBar barStyle="dark-content" backgroundColor="#fff" />
+      <SafeAreaView style={styles.safeArea}>
+        <View style={styles.header}>
+          <TouchableOpacity onPress={onBack} style={styles.backButton}>
+            <Text style={styles.backText}>← Back</Text>
+          </TouchableOpacity>
           <Text style={styles.symbol}>{stock.symbol}</Text>
-          <Text style={styles.price}>₹{stock.price.toFixed(2)}</Text>
-          <Text style={[styles.change, {color: stock.isPositive ? '#4CAF50' : '#F44336'}]}>
+        </View>
+      
+      <View style={styles.priceSection}>
+        <Text style={styles.price}>₹{stock.price.toFixed(2)}</Text>
+        <View style={[styles.changeContainer, {backgroundColor: stock.isPositive ? '#E8F5E8' : '#FFEBEE'}]}>
+          <Text style={[styles.change, {color: stock.isPositive ? '#2E7D32' : '#C62828'}]}>
             {stock.isPositive ? '+' : ''}{stock.change.toFixed(2)} ({stock.changePercent.toFixed(2)}%)
           </Text>
         </View>
       </View>
-
-      <View style={styles.chartContainer}>
-        {loading ? (
-          <ActivityIndicator size="large" color="#fff" />
-        ) : (
-          <LineChart data={chartData} previousClose={stock.price - stock.change} />
-        )}
+      
+      <View style={styles.chartSection}>
+        <View style={styles.chartControls}>
+          <TouchableOpacity style={styles.timeButton}>
+            <Text style={styles.timeButtonText}>1D</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.timeButton}>
+            <Text style={styles.timeButtonText}>1W</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={[styles.timeButton, styles.activeTimeButton]}>
+            <Text style={[styles.timeButtonText, styles.activeTimeButtonText]}>1M</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.timeButton}>
+            <Text style={styles.timeButtonText}>3M</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.timeButton}>
+            <Text style={styles.timeButtonText}>1Y</Text>
+          </TouchableOpacity>
+        </View>
+        
+        <View style={styles.chartContainer}>
+          <SimpleChart 
+            stock={stock} 
+            width={Dimensions.get('window').width - 64} 
+            height={200} 
+          />
+        </View>
+        
+        <View style={styles.navigationButtons}>
+          <TouchableOpacity onPress={onSwipeLeft} style={styles.navButton}>
+            <Text style={styles.navButtonText}>← Previous</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={onSwipeRight} style={styles.navButton}>
+            <Text style={styles.navButtonText}>Next →</Text>
+          </TouchableOpacity>
+        </View>
       </View>
-
-      <View style={styles.swipeHint}>
-        <Text style={styles.hintText}>← Swipe to navigate between stocks →</Text>
-      </View>
+      </SafeAreaView>
     </View>
   );
 };
@@ -86,52 +75,111 @@ const StockDetailScreen: React.FC<Props> = ({stock, onBack, onSwipeLeft, onSwipe
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#000',
+    backgroundColor: '#F8F9FA',
+  },
+  safeArea: {
+    flex: 1,
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    backgroundColor: '#fff',
     borderBottomWidth: 1,
-    borderBottomColor: '#333',
+    borderBottomColor: '#E0E0E0',
+    marginTop: 8,
   },
   backButton: {
-    marginRight: 15,
+    marginRight: 16,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: '#F0F0F0',
+    borderRadius: 8,
+    minWidth: 80,
   },
   backText: {
-    color: '#fff',
-    fontSize: 24,
-  },
-  stockInfo: {
-    flex: 1,
+    fontSize: 16,
+    color: '#1976D2',
+    fontWeight: '500',
+    textAlign: 'center',
   },
   symbol: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#fff',
+    fontSize: 20,
+    fontWeight: '600',
+    color: '#202124',
+  },
+  priceSection: {
+    padding: 16,
+    backgroundColor: '#fff',
+    alignItems: 'center',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E0E0E0',
   },
   price: {
-    fontSize: 20,
-    color: '#fff',
-    marginTop: 5,
+    fontSize: 32,
+    fontWeight: '600',
+    color: '#202124',
+    marginBottom: 8,
+  },
+  changeContainer: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
   },
   change: {
-    fontSize: 16,
-    marginTop: 2,
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  chartSection: {
+    flex: 1,
+    margin: 16,
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 16,
+  },
+  chartControls: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    marginBottom: 16,
+  },
+  timeButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    backgroundColor: '#F0F0F0',
+  },
+  activeTimeButton: {
+    backgroundColor: '#1976D2',
+  },
+  timeButtonText: {
+    fontSize: 14,
+    color: '#5F6368',
+    fontWeight: '500',
+  },
+  activeTimeButtonText: {
+    color: '#fff',
   },
   chartContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 20,
+    marginBottom: 16,
   },
-  swipeHint: {
-    padding: 15,
-    alignItems: 'center',
+  navigationButtons: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
   },
-  hintText: {
-    color: '#666',
-    fontSize: 12,
+  navButton: {
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    backgroundColor: '#1976D2',
+    borderRadius: 20,
+  },
+  navButtonText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '500',
   },
 });
 
